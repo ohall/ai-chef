@@ -1,12 +1,14 @@
 const axios = require('axios');
 const nodemailer = require('nodemailer');
+let retryCount = 0;
+const RETRY_LIMIT = 3;
 
-exports.getRecipesAndSendEmail = async () => {
+async function getRecipesAndSendEmail() {
+
     const apiKey = process.env.CHAT_GPT_KEY;
     const emailUser = process.env.AI_CHEF_EMAIL;
     const emailPass = process.env.AI_CHEF_EMAIL_PASS;
-    const adjectives = ['healthy', 'nutritious', 'nourishing', 'wholesome', 'satisfying', 'filling', 'hearty'];
-
+    const adjectives = ['healthy', 'nutritious', 'nourishing', 'wholesome', 'satisfying', 'filling', 'hearty', 'substantial'];
     const apiURL = 'https://api.openai.com/v1/completions';
 
     const body = {
@@ -21,9 +23,9 @@ exports.getRecipesAndSendEmail = async () => {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }
     };
 
-    body.prompt = `List 5 ${adjectives[(Math.floor(Math.random() * adjectives.length))]} family dinner recipes as a valid JSON array. 
+    body.prompt = `List 5 kid-friendly and ${adjectives[(Math.floor(Math.random() * adjectives.length))]} dinner recipes that contain meat as a valid JSON array. 
     Each object should have 3 elements name which is a short string, instructions which is a paragraph with no punctuation or newline characters
-    and ingredients which is an array of strings`;
+     and ingredients which is an array of strings`;
     
     let recResponse;
     try {
@@ -44,7 +46,6 @@ exports.getRecipesAndSendEmail = async () => {
       console.log(responseString);
       return 0;
     }    
-    
     let listResponse;
     body.prompt = `Consolidate the ingredients of the following recipes into a single list: 
     ${recipesArray.map(item => item.ingredients)} 
@@ -69,13 +70,12 @@ exports.getRecipesAndSendEmail = async () => {
     emailText += listResponse.data.choices[0].text;
 
     console.log('Email text complete');
-
+    
     const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: { user: emailUser, pass: emailPass }
     });
 
-    // Send the shopping list to the specified email address
     const mailOptions = {
         from: emailUser,
         to: process.env.AI_CHEF_EMAIL_TARGETS,
@@ -83,6 +83,7 @@ exports.getRecipesAndSendEmail = async () => {
         text: emailText
     };
 
+    console.log(mailOptions);
     transporter.sendMail(mailOptions, (error, info) => {
         if (error) {
             console.log(error);
@@ -90,4 +91,18 @@ exports.getRecipesAndSendEmail = async () => {
             console.log('Email sent: ' + info.response);
         }
     });
-};
+}
+
+const retryHandler = error => {
+  if (retryCount < RETRY_LIMIT) {
+    retryCount++;
+    console.log(error);
+    console.log(`Retrying ${retryCount}`);
+    getRecipesAndSendEmail().catch(retryHandler);
+  } else {
+    console.error(`Error: ${error}`);
+    console.log('Retry limit reached');
+  }
+}
+
+getRecipesAndSendEmail().catch(retryHandler);
